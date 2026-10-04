@@ -1,0 +1,12 @@
+# A local staging cluster: kind create cluster --name wmd --config kind/cluster.yaml
+# The BFF's NodePort (30080) is published on port 8088 of this machine, on every
+# interface, so a phone on the same network can reach it.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8088
+        listenAddress: "0.0.0.0"
+        protocol: TCP
