@@ -1,0 +1,54 @@
+# The whole stack locally: docker compose up --build
+# The BFF is on http://localhost:8080 (sign in as demo@wmd.shop / demo).
+x-db-passwords: &db-passwords
+  CATALOG_DB_PASSWORD: catalog-local
+  ORDERS_DB_PASSWORD: orders-local
+  NOTIFICATION_DB_PASSWORD: notification-local
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: wmd
+      POSTGRES_PASSWORD: wmd
+      POSTGRES_DB: wmd
+      <<: *db-passwords
+    volumes:
+      - ./db:/wmd:ro
+      - ./db/docker-init.sh:/docker-entrypoint-initdb.d/10-wmd.sh:ro
+    ports: ["55441:5432"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "wmd"]
+      interval: 2s
+      retries: 30
+
+  catalog:
+    build: ../wmd-catalog-service
+    environment:
+      DATABASE_URL: postgresql://catalog_svc:catalog-local@postgres:5432/wmd
+    depends_on: { postgres: { condition: service_healthy } }
+
+  notification:
+    build: ../wmd-notification-service
+    environment:
+      DATABASE_URL: postgresql://notification_svc:notification-local@postgres:5432/wmd
+    depends_on: { postgres: { condition: service_healthy } }
+
+  order:
+    build: ../wmd-order-service
+    environment:
+      DATABASE_URL: postgresql://orders_svc:orders-local@postgres:5432/wmd
+      CATALOG_URL: http://catalog:8080
+      NOTIFICATION_URL: http://notification:8080
+    depends_on: { postgres: { condition: service_healthy } }
+
+  bff:
+    build: ../wmd-bff
+    environment:
+      CATALOG_URL: http://catalog:8080
+      ORDER_URL: http://order:8080
+      NOTIFICATION_URL: http://notification:8080
+      AUTH_SECRET: local-only-secret
+      DEMO_USER_PASSWORD: demo
+    ports: ["8080:8080"]
+    depends_on: [catalog, notification, order]

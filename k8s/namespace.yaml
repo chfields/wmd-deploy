@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ${WMD_NAMESPACE}
+  labels:
+    app.kubernetes.io/part-of: wmd
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: wmd-quota
+  namespace: ${WMD_NAMESPACE}
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    persistentvolumeclaims: "2"
+    services.loadbalancers: "1"
+---
+# Pods talk only to each other; the BFF also accepts traffic from outside.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wmd-internal-only
+  namespace: ${WMD_NAMESPACE}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wmd-bff-public
+  namespace: ${WMD_NAMESPACE}
+spec:
+  podSelector:
+    matchLabels: { app: bff }
+  policyTypes: [Ingress]
+  ingress:
+    - ports: [{ port: 8080 }]

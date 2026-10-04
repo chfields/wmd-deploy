@@ -1,0 +1,154 @@
+# Services and the BFF. Images are filled in by scripts/deploy.sh.
+---
+apiVersion: v1
+kind: Service
+metadata: { name: catalog, namespace: "${WMD_NAMESPACE}" }
+spec:
+  type: ClusterIP
+  selector: { app: catalog }
+  ports: [{ port: 8080, targetPort: 8080 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: catalog, namespace: "${WMD_NAMESPACE}", labels: { app: catalog } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: catalog } }
+  template:
+    metadata: { labels: { app: catalog } }
+    spec:
+      containers:
+        - name: catalog
+          image: "${WMD_CATALOG_IMAGE}"
+          ports: [{ containerPort: 8080 }]
+          env:
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: wmd-db, key: catalog-password } } }
+            - { name: DATABASE_URL, value: "postgresql://catalog_svc:$(DB_PASSWORD)@postgres:5432/wmd" }
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8080 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: 250m, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+---
+apiVersion: v1
+kind: Service
+metadata: { name: notification, namespace: "${WMD_NAMESPACE}" }
+spec:
+  type: ClusterIP
+  selector: { app: notification }
+  ports: [{ port: 8080, targetPort: 8080 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: notification, namespace: "${WMD_NAMESPACE}", labels: { app: notification } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: notification } }
+  template:
+    metadata: { labels: { app: notification } }
+    spec:
+      containers:
+        - name: notification
+          image: "${WMD_NOTIFICATION_IMAGE}"
+          ports: [{ containerPort: 8080 }]
+          env:
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: wmd-db, key: notification-password } } }
+            - { name: DATABASE_URL, value: "postgresql://notification_svc:$(DB_PASSWORD)@postgres:5432/wmd" }
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8080 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: 250m, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+---
+apiVersion: v1
+kind: Service
+metadata: { name: order, namespace: "${WMD_NAMESPACE}" }
+spec:
+  type: ClusterIP
+  selector: { app: order }
+  ports: [{ port: 8080, targetPort: 8080 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: order, namespace: "${WMD_NAMESPACE}", labels: { app: order } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: order } }
+  template:
+    metadata: { labels: { app: order } }
+    spec:
+      containers:
+        - name: order
+          image: "${WMD_ORDER_IMAGE}"
+          ports: [{ containerPort: 8080 }]
+          env:
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: wmd-db, key: orders-password } } }
+            - { name: DATABASE_URL, value: "postgresql://orders_svc:$(DB_PASSWORD)@postgres:5432/wmd" }
+            - { name: CATALOG_URL, value: "http://catalog:8080" }
+            - { name: NOTIFICATION_URL, value: "http://notification:8080" }
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8080 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: 250m, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+---
+apiVersion: v1
+kind: Service
+metadata: { name: bff, namespace: "${WMD_NAMESPACE}" }
+spec:
+  type: LoadBalancer
+  selector: { app: bff }
+  ports: [{ port: 80, targetPort: 8080 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: bff, namespace: "${WMD_NAMESPACE}", labels: { app: bff } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: bff } }
+  template:
+    metadata: { labels: { app: bff } }
+    spec:
+      containers:
+        - name: bff
+          image: "${WMD_BFF_IMAGE}"
+          ports: [{ containerPort: 8080 }]
+          env:
+            - { name: CATALOG_URL, value: "http://catalog:8080" }
+            - { name: ORDER_URL, value: "http://order:8080" }
+            - { name: NOTIFICATION_URL, value: "http://notification:8080" }
+            - { name: AUTH_SECRET, valueFrom: { secretKeyRef: { name: wmd-bff, key: auth-secret } } }
+            - { name: DEMO_USER_PASSWORD, valueFrom: { secretKeyRef: { name: wmd-bff, key: demo-password } } }
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8080 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: 250m, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
