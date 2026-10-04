@@ -54,3 +54,8 @@ docker compose exec -T -e PGHOST=localhost -e PGDATABASE=wmd \
   -e CATALOG_DB_PASSWORD=catalog-local -e ORDERS_DB_PASSWORD=orders-local \
   -e NOTIFICATION_DB_PASSWORD=notification-local postgres sh /wmd/check-boundaries.sh
 ```
+
+## Architecture knowledge
+
+System-wide and repository-specific architecture knowledge lives in
+[docs/knowledge/index.md](docs/knowledge/index.md).
