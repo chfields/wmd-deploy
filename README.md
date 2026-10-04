@@ -13,7 +13,8 @@ Point the app at it with `EXPO_PUBLIC_BFF_URL=http://localhost:8080`.
 
 ## Staging
 
-`deploy.sh` builds each service repo's current commit and rolls
+`deploy.sh` builds each service repo's merged `origin/main` (from a clean
+checkout, whatever branch the local copy is on) and rolls
 `wmd-staging` forward: a namespace with a quota and network policies, Postgres
 with one schema and role per service, then the services and the BFF. Run it
 after merging; the merge is the approval. It always names its kubectl context,

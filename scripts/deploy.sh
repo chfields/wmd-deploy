@@ -2,7 +2,8 @@
 # Builds each repo's current commit and rolls staging forward. Two targets:
 #   kind (local):  WMD_DEMO_PASSWORD=... scripts/deploy.sh
 #   GKE:           WMD_TARGET=gke WMD_REGISTRY=us-central1-docker.pkg.dev/<project>/<repo> WMD_DEMO_PASSWORD=... scripts/deploy.sh
-# Run it after merging; the merge is the approval. Repos are expected next to this one.
+# Run it after merging; the merge is the approval. Each service is built from its
+# origin/main, never from the local checkout. Repos are expected next to this one.
 set -euo pipefail
 WMD_TARGET="${WMD_TARGET:-kind}"
 export WMD_NAMESPACE="${WMD_NAMESPACE:-wmd-staging}"
@@ -24,22 +25,28 @@ KUBECTL=(kubectl --context "$WMD_CONTEXT")
 here="$(cd "$(dirname "$0")/.." && pwd)"
 root="$(cd "$here/.." && pwd)"
 
-image_for() { # repo -> registry/repo:<short sha>, built and pushed if missing
-  local repo="$1" sha ref
-  sha="$(git -C "$root/$repo" rev-parse --short=12 HEAD)"
-  if [ -n "$(git -C "$root/$repo" status --porcelain)" ]; then
-    echo "$repo has uncommitted changes; commit or stash them first" >&2; exit 1
-  fi
+build_dir="$(mktemp -d)"
+trap 'for d in "$build_dir"/*; do [ -d "$d" ] && git -C "$root/$(basename "$d")" worktree remove --force "$d" >/dev/null 2>&1; done; rm -rf "$build_dir"' EXIT
+
+image_for() { # repo -> image of its merged main, built and loaded/pushed if missing
+  # Only merged code reaches staging: build origin/main from a clean checkout,
+  # whatever branch or local changes the working copy has.
+  local repo="$1" sha ref src
+  git -C "$root/$repo" fetch -q origin main
+  sha="$(git -C "$root/$repo" rev-parse --short=12 origin/main)"
   ref="$WMD_REGISTRY/$repo:$sha"
+  src="$build_dir/$repo"
   if [ "$WMD_TARGET" = kind ]; then
     if ! docker image inspect "$ref" >/dev/null 2>&1; then
-      echo "building $ref" >&2
-      docker build -t "$ref" "$root/$repo" >&2
+      echo "building $ref (origin/main)" >&2
+      git -C "$root/$repo" worktree add -q --detach "$src" origin/main
+      docker build -t "$ref" "$src" >&2
     fi
     kind load docker-image "$ref" --name "$WMD_KIND_CLUSTER" >&2
   elif ! docker manifest inspect "$ref" >/dev/null 2>&1; then
-    echo "building $ref" >&2
-    docker buildx build --platform linux/amd64 --push -t "$ref" "$root/$repo" >&2
+    echo "building $ref (origin/main)" >&2
+    git -C "$root/$repo" worktree add -q --detach "$src" origin/main
+    docker buildx build --platform linux/amd64 --push -t "$ref" "$src" >&2
   fi
   echo "$ref"
 }
@@ -87,7 +94,7 @@ for app in catalog notification order bff; do
   "${KUBECTL[@]}" -n "$WMD_NAMESPACE" rollout status "deployment/$app" --timeout=10m
 done
 
-echo "deployed to $WMD_CONTEXT/$WMD_NAMESPACE:"
+echo "deployed to $WMD_CONTEXT/$WMD_NAMESPACE (each service at its origin/main):"
 echo "  catalog       $WMD_CATALOG_IMAGE"
 echo "  notification  $WMD_NOTIFICATION_IMAGE"
 echo "  order         $WMD_ORDER_IMAGE"
