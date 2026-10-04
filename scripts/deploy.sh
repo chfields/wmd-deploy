@@ -12,10 +12,12 @@ case "$WMD_TARGET" in
     WMD_KIND_CLUSTER="${WMD_KIND_CLUSTER:-wmd}"
     WMD_CONTEXT="${WMD_CONTEXT:-kind-$WMD_KIND_CLUSTER}"
     WMD_REGISTRY="${WMD_REGISTRY:-wmd.local}"
+    export WMD_BFF_SERVICE_TYPE=NodePort
     ;;
   gke)
     : "${WMD_REGISTRY:?set WMD_REGISTRY, e.g. us-central1-docker.pkg.dev/<project>/<repo>}"
     : "${WMD_CONTEXT:?set WMD_CONTEXT to the GKE kubectl context}"
+    export WMD_BFF_SERVICE_TYPE=LoadBalancer
     ;;
   *) echo "WMD_TARGET must be kind or gke" >&2; exit 1 ;;
 esac
@@ -56,7 +58,7 @@ export WMD_NOTIFICATION_IMAGE="$(image_for wmd-notification-service)"
 export WMD_ORDER_IMAGE="$(image_for wmd-order-service)"
 export WMD_BFF_IMAGE="$(image_for wmd-bff)"
 
-render() { envsubst '${WMD_NAMESPACE} ${WMD_CATALOG_IMAGE} ${WMD_NOTIFICATION_IMAGE} ${WMD_ORDER_IMAGE} ${WMD_BFF_IMAGE}' < "$1"; }
+render() { envsubst '${WMD_NAMESPACE} ${WMD_BFF_SERVICE_TYPE} ${WMD_CATALOG_IMAGE} ${WMD_NOTIFICATION_IMAGE} ${WMD_ORDER_IMAGE} ${WMD_BFF_IMAGE}' < "$1"; }
 
 render "$here/k8s/namespace.yaml" | "${KUBECTL[@]}" apply -f -
 
@@ -85,11 +87,6 @@ render "$here/k8s/postgres.yaml" | "${KUBECTL[@]}" apply -f -
 "${KUBECTL[@]}" -n "$WMD_NAMESPACE" wait --for=condition=complete job/wmd-db-init --timeout=10m
 
 render "$here/k8s/apps.yaml" | "${KUBECTL[@]}" apply -f -
-if [ "$WMD_TARGET" = kind ]; then
-  # kind has no load balancer: publish the BFF on the node port kind/cluster.yaml maps to :8088.
-  "${KUBECTL[@]}" -n "$WMD_NAMESPACE" patch service bff --type merge \
-    -p '{"spec":{"type":"NodePort","ports":[{"port":80,"targetPort":8080,"nodePort":30080}]}}' >/dev/null
-fi
 for app in catalog notification order bff; do
   "${KUBECTL[@]}" -n "$WMD_NAMESPACE" rollout status "deployment/$app" --timeout=10m
 done
