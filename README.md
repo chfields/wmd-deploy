@@ -11,17 +11,37 @@ docker compose up --build
 The BFF is on http://localhost:8080; sign in as `demo@wmd.shop` / `demo`.
 Point the app at it with `EXPO_PUBLIC_BFF_URL=http://localhost:8080`.
 
-## Staging on GKE
+## Staging
+
+`deploy.sh` builds each service repo's current commit and rolls
+`wmd-staging` forward: a namespace with a quota and network policies, Postgres
+with one schema and role per service, then the services and the BFF. Run it
+after merging; the merge is the approval. It always names its kubectl context,
+so it never deploys to whichever cluster happens to be current.
+
+**On a local kind cluster** (the default):
 
 ```bash
-WMD_REGISTRY=us-central1-docker.pkg.dev/<project>/<repo> WMD_DEMO_PASSWORD=<choose one> scripts/deploy.sh
+kind create cluster --name wmd --config kind/cluster.yaml
+WMD_DEMO_PASSWORD=<choose one> scripts/deploy.sh
 ```
 
-`deploy.sh` builds each service repo's current commit (`linux/amd64`), pushes
-it, and rolls `wmd-staging` forward: namespace with quota and network
-policies, Postgres with one schema and role per service, then the services
-and the BFF behind a load balancer. Run it after merging; the merge is the
-approval. Remove staging with `scripts/teardown.sh`.
+Images are built for this machine and loaded straight into the cluster. The
+BFF is published on port 8088 of this machine; a phone on the same network
+reaches it at `http://<this machine's LAN IP>:8088`.
+
+**On GKE:**
+
+```bash
+WMD_TARGET=gke WMD_CONTEXT=<gke context> WMD_REGISTRY=us-central1-docker.pkg.dev/<project>/<repo> \
+  WMD_DEMO_PASSWORD=<choose one> scripts/deploy.sh
+```
+
+Images are built for `linux/amd64` and pushed to the registry; the BFF gets a
+load balancer.
+
+Remove staging with `scripts/teardown.sh` (and the local cluster with
+`kind delete cluster --name wmd`).
 
 ## Data ownership
 
